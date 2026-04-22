@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'package:ecolods/api/api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:ecolods/api/api_service.dart';
+import 'package:flutter/services.dart';
+import 'package:uuid/uuid.dart';
 
 class VariantsStep extends StatefulWidget {
   final int productId;
@@ -21,103 +23,165 @@ class VariantsStep extends StatefulWidget {
 
 class VariantsStepState extends State<VariantsStep> {
   bool isSaving = false;
+  final _formKey = GlobalKey<FormState>();
 
   List<Map<String, dynamic>> variants = [];
+  final Map<String, Map<String, TextEditingController>> controllers = {};
+
+  final uuid = const Uuid();
 
   @override
   void initState() {
     super.initState();
 
-    /// 🔥 Prefill existing variants
     if (widget.existingVariants.isNotEmpty) {
-      variants = widget.existingVariants.map<Map<String, dynamic>>((e) {
-        return {
-          "id": e["id"], // 🔥 needed for update
-          "colour": e["colour"] ?? "",
-          "size": e["size"] ?? "",
-          "sku_code": e["sku_code"] ?? "",
-          "sale_price": e["sale_price"].toString(),
-          "qty": e["qty"].toString(),
+      for (var e in widget.existingVariants) {
+        String uid = uuid.v4();
+
+        variants.add({
+          "uid": uid,
+          "id": e["id"],
+        });
+
+        controllers[uid] = {
+          "colour": TextEditingController(text: e["colour"] ?? ""),
+          "size": TextEditingController(text: e["size"] ?? ""),
+          "sku_code": TextEditingController(text: e["sku_code"] ?? ""),
+          "list_price": TextEditingController(
+              text: e["list_price"]?.toString() ?? ""),
+          "qty":
+              TextEditingController(text: e["qty"]?.toString() ?? ""),
         };
-      }).toList();
+      }
     } else {
       addVariant();
     }
   }
 
-  /// ➕ Add Variant
+  @override
+  void dispose() {
+    for (var map in controllers.values) {
+      for (var c in map.values) {
+        c.dispose();
+      }
+    }
+    super.dispose();
+  }
+
+  /// ================= ADD =================
   void addVariant() {
     setState(() {
+      String uid = uuid.v4();
+
       variants.add({
+        "uid": uid,
         "id": null,
-        "colour": "",
-        "size": "",
-        "sku_code": "",
-        "sale_price": "",
-        "qty": "",
       });
+
+      controllers[uid] = {
+        "colour": TextEditingController(),
+        "size": TextEditingController(),
+        "sku_code": TextEditingController(),
+        "list_price": TextEditingController(),
+        "qty": TextEditingController(),
+      };
     });
   }
 
-  /// ❌ Remove Variant
+  /// ================= REMOVE =================
   void removeVariant(int index) {
+    if (variants.length == 1) return;
+
     setState(() {
+      String uid = variants[index]["uid"];
+
+      controllers[uid]?.forEach((_, c) => c.dispose());
+      controllers.remove(uid);
+
       variants.removeAt(index);
     });
   }
 
-  /// ✅ Validate
-  bool validateVariants() {
+  /// ================= CLEAN DATA =================
+  List<Map<String, dynamic>> getCleanVariants() {
+    List<Map<String, dynamic>> result = [];
+
     for (var v in variants) {
-      if (v["colour"].toString().isEmpty ||
-          v["size"].toString().isEmpty ||
-          v["sku_code"].toString().isEmpty ||
-          v["sale_price"].toString().isEmpty ||
-          v["qty"].toString().isEmpty) {
+      String uid = v["uid"];
+
+      String sku = controllers[uid]?["sku_code"]?.text.trim() ?? "";
+
+      if (sku.isEmpty) continue;
+
+      result.add({
+        "id": v["id"],
+        "colour": controllers[uid]?["colour"]?.text.trim() ?? "",
+        "size": controllers[uid]?["size"]?.text.trim() ?? "",
+        "sku_code": sku,
+        "list_price": double.tryParse(
+                controllers[uid]?["list_price"]?.text.trim() ?? "") ??
+            0,
+        "qty":
+            int.tryParse(controllers[uid]?["qty"]?.text.trim() ?? "") ??
+                0,
+      });
+    }
+
+    return result;
+  }
+
+  /// ================= VALIDATE SKU =================
+  bool validateDuplicateSKU(List variants) {
+    final skus = <String>{};
+
+    for (var v in variants) {
+      if (skus.contains(v["sku_code"])) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Duplicate SKU: ${v["sku_code"]}")),
+        );
         return false;
       }
+      skus.add(v["sku_code"]);
     }
     return true;
   }
 
-  /// 🔥 SAVE API (ADD + UPDATE)
+  /// ================= SAVE API =================
   Future<bool> saveData() async {
     if (isSaving) return false;
 
-    if (!validateVariants()) {
+    if (!(_formKey.currentState?.validate() ?? false)) return false;
+
+    List clean = getCleanVariants();
+
+    if (clean.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Fill all variant fields")),
+        const SnackBar(content: Text("No valid variants")),
       );
       return false;
     }
 
-    isSaving = true;
+    if (!validateDuplicateSKU(clean)) return false;
+
+    setState(() => isSaving = true);
 
     try {
-      var body = {
-        "action": "update_variants",
-        "product_id": widget.productId,
-        "vendor_id": widget.vendorId,
-        "variants": variants,
-      };
-
-      print("==== PAYLOAD ====");
-      print(jsonEncode(body));
-
       var res = await http.post(
         Uri.parse("${ApiService.baseUrl}product.php"),
         headers: {"Content-Type": "application/json"},
-        body: jsonEncode(body),
+        body: jsonEncode({
+          "action": "update_variants",
+          "product_id": widget.productId,
+          "vendor_id": widget.vendorId,
+          "variants": clean,
+        }),
       );
-
-      print("==== RESPONSE ====");
-      print(res.body);
 
       var data = json.decode(res.body);
 
       if (data["status"] == "success") {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Variants Saved Successfully")),
+          const SnackBar(content: Text("Saved Successfully")),
         );
         return true;
       } else {
@@ -127,23 +191,58 @@ class VariantsStepState extends State<VariantsStep> {
         return false;
       }
     } catch (e) {
-      print("ERROR: $e");
+      debugPrint("ERROR: $e");
       return false;
     } finally {
-      isSaving = false;
+      if (mounted) setState(() => isSaving = false);
     }
   }
 
-  /// 🧾 Input Field
+  /// ================= INPUT FIELD =================
   Widget inputField(String hint, String key, int index,
-      {TextInputType type = TextInputType.text}) {
+      {bool isNumber = false, bool isTextOnly = false}) {
+    String uid = variants[index]["uid"];
+
     return Expanded(
       child: TextFormField(
-        keyboardType: type,
-        initialValue: variants[index][key]?.toString() ?? "",
-        onChanged: (val) {
-          variants[index][key] = val;
+        controller: controllers[uid]?[key],
+        keyboardType:
+            isNumber ? TextInputType.number : TextInputType.text,
+        validator: (val) {
+          if (key == "sku_code" && (val == null || val.trim().isEmpty)) {
+            return "SKU required";
+          }
+
+          if (key == "list_price") {
+            if (val == null || val.trim().isEmpty) {
+              return "Price required";
+            }
+            if (double.tryParse(val) == null ||
+                double.parse(val) <= 0) {
+              return "Invalid price";
+            }
+          }
+
+          if (val == null || val.trim().isEmpty) {
+            return "$hint required";
+          }
+
+          if (isNumber && num.tryParse(val) == null) {
+            return "Invalid number";
+          }
+
+          if (isTextOnly &&
+              !RegExp(r'^[a-zA-Z ]+$').hasMatch(val)) {
+            return "Only text allowed";
+          }
+
+          return null;
         },
+        inputFormatters: [
+          if (isNumber) FilteringTextInputFormatter.digitsOnly,
+          if (isTextOnly)
+            FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
+        ],
         decoration: InputDecoration(
           labelText: hint,
           filled: true,
@@ -156,90 +255,100 @@ class VariantsStepState extends State<VariantsStep> {
     );
   }
 
-  /// 🎨 UI
+  Map<String, dynamic> getFormData() {
+    return {
+      "product_id": widget.productId,
+      "vendor_id": widget.vendorId,
+      "variants": getCleanVariants(),
+    };
+  }
+
+  /// ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Product Variants"),
-      ),
-      body: Column(
-        children: [
-          /// LIST
-          Expanded(
-            child: ListView.builder(
+      body: Form(
+        key: _formKey,
+        child: Stack(
+          children: [
+            ListView.builder(
+              padding: const EdgeInsets.all(12),
               itemCount: variants.length,
               itemBuilder: (context, index) {
-                return Card(
-                  margin: const EdgeInsets.all(10),
-                  child: Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            inputField("Color", "colour", index),
-                            const SizedBox(width: 10),
-                            inputField("Size", "size", index),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black12, blurRadius: 6)
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment:
+                            MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("Variant ${index + 1}"),
+                          IconButton(
+                            onPressed: variants.length == 1
+                                ? null
+                                : () => removeVariant(index),
+                            icon: const Icon(Icons.delete,
+                                color: Colors.red),
+                          )
+                        ],
+                      ),
 
-                        Row(
-                          children: [
-                            inputField("SKU", "sku_code", index),
-                            const SizedBox(width: 10),
-                            inputField("Price", "sale_price", index,
-                                type: TextInputType.number),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          inputField("Color", "colour", index,
+                              isTextOnly: true),
+                          const SizedBox(width: 10),
+                          inputField("Size", "size", index),
+                        ],
+                      ),
 
-                        Row(
-                          children: [
-                            inputField("Qty", "qty", index,
-                                type: TextInputType.number),
-                            IconButton(
-                              onPressed: () => removeVariant(index),
-                              icon: const Icon(Icons.delete,
-                                  color: Colors.red),
-                            )
-                          ],
-                        ),
-                      ],
-                    ),
+                      const SizedBox(height: 10),
+
+                      Row(
+                        children: [
+                          inputField("SKU", "sku_code", index),
+                          const SizedBox(width: 10),
+                          inputField("List Price", "list_price", index,
+                              isNumber: true),
+                        ],
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      Row(
+                        children: [
+                          inputField("Qty", "qty", index,
+                              isNumber: true),
+                        ],
+                      ),
+                    ],
                   ),
                 );
               },
             ),
-          ),
 
-          /// ➕ ADD BUTTON
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: ElevatedButton(
-              onPressed: addVariant,
-              child: const Text("Add Variant"),
-            ),
-          ),
-
-          /// 💾 SAVE BUTTON
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () async {
-                  bool success = await saveData();
-                  if (success) {
-                    Navigator.pop(context, true);
-                  }
-                },
-                child: const Text("Save Variants"),
+            Positioned(
+              bottom: 20,
+              right: 20,
+              child: FloatingActionButton(
+                onPressed: addVariant,
+                child: const Icon(Icons.add),
               ),
             ),
-          ),
-        ],
+
+            if (isSaving)
+              const Center(child: CircularProgressIndicator()),
+          ],
+        ),
       ),
     );
   }

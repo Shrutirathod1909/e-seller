@@ -1,16 +1,18 @@
 import 'dart:io';
-import 'package:ecolods/api/api_service.dart';
-import 'package:http/http.dart' as http;
-import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:ecolods/api/api_service.dart';
 
 class ImageUploadStep extends StatefulWidget {
   final String productId;
+  final Map<String, dynamic>? existingData;
 
   const ImageUploadStep({
     super.key,
     required this.productId,
+    this.existingData,
   });
 
   @override
@@ -18,151 +20,199 @@ class ImageUploadStep extends StatefulWidget {
 }
 
 class ImageUploadStepState extends State<ImageUploadStep> {
-  final ImagePicker picker = ImagePicker();
+  final picker = ImagePicker();
 
-  // Can store either File (local) or String (server URL)
-  List<dynamic> images = List.generate(12, (index) => null);
+  List<dynamic> images = List.filled(12, null);
+  List<File?> tempFiles = List.filled(12, null);
 
   bool isUploading = false;
+  bool isSaving = false;
 
-  /// PICK IMAGE AND AUTO UPLOAD
+  @override
+  void initState() {
+    super.initState();
+    loadImagesFromAPI();
+  }
+
+  /* ================= GET IMAGES ================= */
+
+  Future loadImagesFromAPI() async {
+    try {
+      var response = await http.post(
+        Uri.parse("${ApiService.baseUrl}image.php"),
+        body: {
+          "productid": widget.productId.toString(),
+        },
+      );
+
+      var data = jsonDecode(response.body);
+
+      if (data["status"] == "success") {
+        setState(() {
+          images = List.filled(12, null);
+          List list = data["images"];
+
+          for (int i = 0; i < list.length && i < 12; i++) {
+            images[i] = list[i];
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint("Fetch error: $e");
+    }
+  }
+
+  /* ================= PICK IMAGE ================= */
+
   Future pickImage(int index) async {
+    if (isUploading) return;
+
     final picked = await picker.pickImage(source: ImageSource.gallery);
 
     if (picked != null) {
       setState(() {
-        images[index] = File(picked.path);
+        tempFiles[index] = File(picked.path);
       });
 
-      // Auto upload the picked image
-      await uploadSingleImage(index);
+      uploadImage(index);
     }
   }
 
-  /// UPLOAD SINGLE IMAGE
- Future uploadSingleImage(int index) async {
-  if (images[index] == null) return;
+  /* ================= UPLOAD IMAGE ================= */
 
-  /// 🔥 IMPORTANT CHECK
-  if (widget.productId.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Product ID missing ❌")),
-    );
-    return;
-  }
+  Future uploadImage(int index) async {
+    if (tempFiles[index] == null) return;
 
-  print("IMAGE STEP PRODUCT ID: ${widget.productId}");
+    setState(() => isUploading = true);
 
-  setState(() => isUploading = true);
+    try {
+      var request = http.MultipartRequest(
+        "POST",
+        Uri.parse("${ApiService.baseUrl}image.php"),
+      );
 
-  try {
-    var uri = Uri.parse("${ApiService.baseUrl}image.php");
-    var request = http.MultipartRequest("POST", uri);
+      request.fields["productid"] = widget.productId.toString();
+      request.fields["image_index"] = (index + 1).toString();
 
-    request.fields['productid'] = widget.productId;
-    request.fields['image_index'] = (index + 1).toString();
-
-    if (images[index] is File) {
       request.files.add(
         await http.MultipartFile.fromPath(
           "image",
-          (images[index] as File).path,
+          tempFiles[index]!.path,
         ),
       );
+
+      var response = await request.send();
+      var res = await response.stream.bytesToString();
+      var jsonResp = jsonDecode(res);
+
+      if (jsonResp["status"] == "success") {
+        setState(() {
+          images[index] = jsonResp["image"];
+          tempFiles[index] = null;
+        });
+      }
+    } catch (e) {
+      debugPrint("Upload error: $e");
     }
 
-    var response = await request.send();
-    var responseData = await response.stream.bytesToString();
-
-    print("UPLOAD RESPONSE: $responseData");
-
-    var jsonResp = jsonDecode(responseData);
-
-    if (response.statusCode == 200 &&
-        jsonResp['status'] == 'success') {
-      setState(() {
-        images[index] =
-            "${ApiService.baseUrl}uploads/${jsonResp['image']}";
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content:
-                Text("Image ${index + 1} uploaded successfully ✅")),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text("Image ${index + 1} upload failed")),
-      );
-    }
-  } catch (e) {
-    print("Upload error: $e");
-  } finally {
     setState(() => isUploading = false);
   }
-}
 
-  /// REMOVE IMAGE
-  void removeImage(int index) {
-    setState(() {
-      images[index] = null;
-    });
+  /* ================= DELETE IMAGE ================= */
+
+  Future removeImage(int index) async {
+    try {
+      await http.post(
+        Uri.parse("${ApiService.baseUrl}image.php"),
+        body: {
+          "productid": widget.productId.toString(),
+          "image_index": (index + 1).toString(),
+          "delete": "1",
+        },
+      );
+
+      setState(() {
+        images[index] = null;
+        tempFiles[index] = null;
+      });
+    } catch (e) {
+      debugPrint("Delete error: $e");
+    }
   }
 
-  /// IMAGE BOX
+  /* ================= FORM DATA ================= */
+
+  Map<String, dynamic> getFormData() {
+    return {
+      "productId": widget.productId,
+      "images": images.whereType<String>().toList(),
+    };
+  }
+
+  /* ================= VALIDATION ================= */
+
+  Future<bool> saveData() async {
+    if (isSaving) return false;
+
+    setState(() => isSaving = true);
+
+    try {
+      if (!images.any((e) => e != null && e.toString().isNotEmpty)) {
+        setState(() => isSaving = false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("❌ Please upload at least 1 image")),
+        );
+
+        return false;
+      }
+
+      debugPrint("📦 FINAL IMAGE DATA:");
+      debugPrint(jsonEncode(getFormData()));
+
+      setState(() => isSaving = false);
+      return true;
+    } catch (e) {
+      setState(() => isSaving = false);
+      return false;
+    }
+  }
+
+  /* ================= IMAGE BOX ================= */
+
   Widget imageBox(int index) {
     final img = images[index];
+    final file = tempFiles[index];
+
     return GestureDetector(
       onTap: () => pickImage(index),
       child: Stack(
         children: [
           Container(
             decoration: BoxDecoration(
-              color: Colors.grey.shade200,
+              border: Border.all(color: Colors.grey),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.shade400),
             ),
-            child: img == null
-                ? const Center(
-                    child: Icon(
-                      Icons.add_a_photo,
-                      color: Color(0xFF3B3F6B),
-                      size: 30,
-                    ),
-                  )
-                : ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: img is File
-                        ? Image.file(
-                            img,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            height: double.infinity,
-                          )
-                        : Image.network(
-                            img,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            height: double.infinity,
-                            loadingBuilder: (context, child, loadingProgress) {
-                              if (loadingProgress == null) return child;
-                              return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-                            },
-                            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
-                          ),
-                  ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: file != null
+                  ? Image.file(file, fit: BoxFit.cover)
+                  : img != null
+                      ? Image.network(
+                          img,
+                          fit: BoxFit.cover,
+                          errorBuilder: (c, e, s) =>
+                              const Icon(Icons.broken_image),
+                        )
+                      : const Center(child: Icon(Icons.add_a_photo)),
+            ),
           ),
-          if (img != null)
+
+          if (img != null || file != null)
             Positioned(
-              top: -5,
-              right: -5,
+              right: 0,
               child: IconButton(
-                icon: const Icon(
-                  Icons.cancel,
-                  color: Colors.red,
-                  size: 20,
-                ),
+                icon: const Icon(Icons.close, color: Colors.red),
                 onPressed: () => removeImage(index),
               ),
             ),
@@ -171,36 +221,30 @@ class ImageUploadStepState extends State<ImageUploadStep> {
     );
   }
 
+  /* ================= UI ================= */
+
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Stack(
       children: [
-        Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.all(16),
-            physics: const BouncingScrollPhysics(),
-            itemCount: 12,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1,
-            ),
-            itemBuilder: (context, index) => imageBox(index),
+        GridView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: 12,
+          gridDelegate:
+              const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
           ),
+          itemBuilder: (context, index) => imageBox(index),
         ),
+
         if (isUploading)
-          const Padding(
-            padding: EdgeInsets.all(8),
-            child: LinearProgressIndicator(),
-          ),
-        const SizedBox(height: 10),
+          const Center(child: CircularProgressIndicator()),
+
+        if (isSaving)
+          const Center(child: CircularProgressIndicator()),
       ],
     );
-  }
-
-  /// Step validation for parent widget
-  Future<bool> saveData() async {
-    return true;
   }
 }

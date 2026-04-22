@@ -4,10 +4,18 @@ import 'package:ecolods/screen/profile_screen.dart';
 import 'package:ecolods/screen/Catalog_upload.dart';
 import 'package:ecolods/screen/dashboard_screen.dart';
 import 'package:ecolods/screen/orders_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class BottomNavScreen extends StatefulWidget {
-  const BottomNavScreen({super.key});
+  final int vendorId;
+  final String companyName;
+   final int companyId;
+
+  const BottomNavScreen({
+    super.key,
+    required this.vendorId,
+    required this.companyName,
+    required this.companyId
+  });
 
   @override
   State<BottomNavScreen> createState() => _BottomNavScreenState();
@@ -15,40 +23,18 @@ class BottomNavScreen extends StatefulWidget {
 
 class _BottomNavScreenState extends State<BottomNavScreen> {
   int index = 0;
-  String companyName = "";
-    int vendorId = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCompanyName();
-  }
-
-  Future<void> _loadCompanyName() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      companyName = prefs.getString("company_name") ?? "";
-       vendorId = prefs.getInt("vendor_id") ?? 0;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
-    // Wait until companyName is loaded
-    if (companyName.isEmpty) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    // Screens list with dynamic company name
+    // Screens list with dynamic company name and vendorId
     final screens = [
-      DashboardScreen(companyName: companyName,
-        vendorId: vendorId,
-        ),
-      const OrdersScreen(),
-      const ProfileScreen(),
-      const SellerProductScreen(),
+      DashboardScreen(
+        companyName: widget.companyName,
+        vendorId: widget.vendorId,
+      ),
+      OrdersScreen(),
+      ProfileScreen(),
+      SellerProductScreen(),
     ];
 
     double navHeight = 60; // Responsive height
@@ -69,14 +55,14 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => const CatalogUploadMenu(),
+              builder: (_) => CatalogUploadMenu(vendorId: widget.vendorId,company_id: widget.companyId,),
             ),
           );
         },
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
 
-      /// BOTTOM NAV
+      /// Bottom Navigation
       bottomNavigationBar: BottomAppBar(
         shape: const CircularNotchedRectangle(),
         notchMargin: 6,
@@ -90,7 +76,7 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
               circleNavItem(Icons.shopping_bag, "Orders", 1, circleSize, iconSize),
               const SizedBox(width: 40), // space for FAB
               circleNavItem(Icons.receipt_long, "Profile", 2, circleSize, iconSize),
-              circleNavItem(Icons.inventory, "Product", 3, circleSize, iconSize),
+              circleNavItem(Icons.inventory, "Inventory", 3, circleSize, iconSize),
             ],
           ),
         ),
@@ -120,7 +106,7 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
               shape: BoxShape.circle,
               boxShadow: selected
                   ? [
-                      BoxShadow(
+                      const BoxShadow(
                         color: Colors.black26,
                         blurRadius: 4,
                         offset: Offset(0, 2),

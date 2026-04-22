@@ -1,24 +1,28 @@
+import 'package:ecolods/screen/add_catalogs_in_bulk.dart'; // Bulk catalog (CSV/template)
 import 'package:ecolods/screen/add_single_catalog_screen.dart';
 import 'package:ecolods/screen/appbarscreen.dart';
 import 'package:ecolods/screen/view_catalog_screen.dart';
 import 'package:flutter/material.dart';
 
 class CatalogUploadMenu extends StatefulWidget {
-  const CatalogUploadMenu({super.key});
+  final int vendorId;
+  final int company_id;
+
+  const CatalogUploadMenu(
+      {super.key, required this.vendorId, required this.company_id});
 
   @override
   State<CatalogUploadMenu> createState() => _CatalogUploadMenuState();
 }
 
 class _CatalogUploadMenuState extends State<CatalogUploadMenu> {
-  /// Menu card builder
   Widget menuCard(
-    BuildContext context,
-    IconData icon,
-    String title,
-    Color color,
-    VoidCallback onTap,
-  ) {
+      BuildContext context,
+      IconData icon,
+      String title,
+      Color color,
+      VoidCallback onTap,
+      ) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -28,10 +32,7 @@ class _CatalogUploadMenuState extends State<CatalogUploadMenu> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(15),
           boxShadow: const [
-            BoxShadow(
-              color: Colors.black12,
-              blurRadius: 8,
-            )
+            BoxShadow(color: Colors.black12, blurRadius: 8),
           ],
         ),
         child: Row(
@@ -61,12 +62,9 @@ class _CatalogUploadMenuState extends State<CatalogUploadMenu> {
     );
   }
 
-  /// Refresh or fetch products after adding catalog
   void refreshProducts() {
-    // Implement your product refresh logic here
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Product list refreshed!")),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text("Product list refreshed!")));
   }
 
   @override
@@ -78,38 +76,61 @@ class _CatalogUploadMenuState extends State<CatalogUploadMenu> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // View Catalog
+            // 🔵 View Catalog
             menuCard(
               context,
               Icons.visibility,
               "View Catalog",
               Colors.blue,
-              () {
+                  () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => ViewCatalogScreen()),
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        ViewCatalogScreen(company_id: widget.company_id),
+                  ),
                 );
               },
             ),
 
-            // Add Single Catalog
+            // 🟢 Add Single Catalog
             menuCard(
-  context,
-  Icons.add_box,
-  "Add Single Catalog",
-  Colors.green,
-  () async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => AddSingleCatalogScreen()),
-    );
-
-    if (result == true) {
-      refreshProducts();
-    }
-  },
-
+              context,
+              Icons.add_box,
+              "Add Single Catalog",
+              Colors.green,
+                  () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AddSingleCatalogScreen(
+                        vendorId: widget.vendorId,
+                        company_id: widget.company_id),
+                  ),
+                );
+                if (result == true) refreshProducts();
+              },
             ),
+
+            // 🟠 Bulk Catalog Upload (CSV/Template)
+            menuCard(
+              context,
+              Icons.upload_file,
+              "Bulk Catalog Upload",
+              Colors.orange,
+                  () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => UploadTemplateScreen(),
+                  ),
+                );
+                if (result == true) refreshProducts();
+              },
+            ),
+
+            // 🟣 Bulk Image Upload
+           
           ],
         ),
       ),

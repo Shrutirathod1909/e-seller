@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ecolods/screen/login.dart';
+import 'package:ecolods/screen/bottom_nav_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -31,15 +33,37 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    Timer(const Duration(seconds: 3), () {
+    // ✅ Fast login check
+    Timer(const Duration(seconds: 3), () async {
       if (!mounted) return;
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const LoginScreen(),
-        ),
-      );
+      final prefs = await SharedPreferences.getInstance();
+      bool isLoggedIn = prefs.getBool("isLoggedIn") ?? false;
+
+      if (isLoggedIn) {
+        // ✅ Get saved vendor info
+        int vendorId = prefs.getInt("vendor_id") ?? 0;
+        String companyName = prefs.getString("company_name") ?? "";
+        int companyId = prefs.getInt("company_id") ?? 0;
+
+        // Navigate to dashboard
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => BottomNavScreen(
+              vendorId: vendorId,
+              companyName: companyName,
+              companyId: companyId,
+            ),
+          ),
+        );
+      } else {
+        // Navigate to login
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
+      }
     });
   }
 
@@ -53,7 +77,7 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        color: Colors.white, // ✅ Background color white
+        color: Colors.white,
         child: Center(
           child: FadeTransition(
             opacity: _animation,
@@ -62,32 +86,17 @@ class _SplashScreenState extends State<SplashScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-
                   Image.asset(
-                    "assets/icon.png",
-                    height: 110,
+                    "assets/ekodex_icon.jpeg",
+                    height:200,
                     fit: BoxFit.contain,
                   ),
-
-                  const SizedBox(height: 20),
-
-                  const Text(
-                    "Ecommerce Seller",
-                    style: TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black, // Optional: text color dark for white bg
-                      letterSpacing: 2,
-                    ),
-                  ),
-
+                  
                   const SizedBox(height: 30),
-
                   const CircularProgressIndicator(
-                    color: Colors.blue, // ✅ Loader color blue
+                    color: Colors.blue,
                     strokeWidth: 3,
                   ),
-
                 ],
               ),
             ),

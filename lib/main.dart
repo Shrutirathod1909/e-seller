@@ -1,25 +1,24 @@
-import 'package:ecolods/screen/splash_screen.dart';
-import 'package:ecolods/screen/bottom_nav_screen.dart';
+import 'package:ecolods/screen/login.dart';
 import 'package:flutter/material.dart';
+import 'package:ecolods/screen/splash_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyApp());
+  runApp(const ekodex());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class ekodex extends StatelessWidget {
+  const ekodex({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-
+      home:SplashScreen(),
+      title: "EcoLods",
       initialRoute: '/',
-
       routes: {
-        '/': (context) => const SplashScreen(),
-        '/DashboardScreen': (context) => const BottomNavScreen(),
+        '/LoginScreen': (context) => const LoginScreen(),
       },
     );
   }

@@ -1,10 +1,11 @@
 import 'dart:convert';
+import 'package:ecolods/api/api_service.dart';
+import 'package:ecolods/screen/register_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
-import 'package:ecolods/api/api_service.dart';
-import 'package:ecolods/screen/bottom_nav_screen.dart';
-
+import 'bottom_nav_screen.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -44,39 +45,42 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final data = jsonDecode(response.body);
 
-      if (data["status"] == "success" && data["vendor"] != null) {
-        // ✅ SAFE PARSING
-        final vendorData = data["vendor"];
-        int vendorId =
-            int.tryParse(vendorData["vendor_id"].toString()) ?? 0;
-        String email = vendorData["email"] ?? "";
-        String companyName = vendorData["company_name"] ?? "";
-        String companyId = vendorData["company_id"] ?? "";
+     if (data["status"] == "success" && data["vendor"] != null) {
+  final vendorData = data["vendor"] ?? {};
 
-        if (vendorId == 0) {
-          showMsg("Invalid vendor ID ❌");
-          return;
-        }
+  int vendorId =
+      int.tryParse(vendorData["vendor_id"]?.toString() ?? "0") ?? 0;
 
-        // ✅ SAVE TO SHARED PREFERENCES
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        await prefs.setInt("vendor_id", vendorId);
-        await prefs.setString("email", email);
-        await prefs.setString("company_name", companyName);
-        await prefs.setString("company_id", companyId);
-        await prefs.setBool("isLoggedIn", true);
+  int companyId =
+      int.tryParse(vendorData["company_id"]?.toString() ?? "0") ?? 0;
 
-        print("Vendor ID Saved: $vendorId");
+  String email = vendorData["email"] ?? "";
+  String companyName = vendorData["company_name"] ?? "";
 
-        if (!mounted) return;
+  SharedPreferences prefs = await SharedPreferences.getInstance();
+  await prefs.setInt("vendor_id", vendorId);
+  await prefs.setInt("company_id", companyId);
+  await prefs.setString("email", email);
+  await prefs.setString("company_name", companyName);
+  await prefs.setBool("isLoggedIn", true);
 
-        showMsg("Login Successful ✅");
+  if (!mounted) return;
+  final service = FlutterBackgroundService();
+service.startService();
 
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const BottomNavScreen()),
-        );
-      } else {
+  showMsg("Login successful ✅");
+
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (_) => BottomNavScreen(
+        vendorId: vendorId,
+        companyName: companyName,
+        companyId: companyId,
+      ),
+    ),
+  );
+} else {
         showMsg(data["message"] ?? "Login failed ❌");
       }
     } catch (e) {
@@ -123,11 +127,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   Image.asset("assets/icon.png", height: 110),
                   const SizedBox(height: 20),
-                  const Text(
-                    "Welcome Back",
-                    style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 40),
                   Container(
                     padding: const EdgeInsets.all(25),
                     decoration: BoxDecoration(
@@ -184,6 +183,31 @@ class _LoginScreenState extends State<LoginScreen> {
                                         fontSize: 18, color: Colors.white)),
                           ),
                         ),
+                        const SizedBox(height: 15),
+
+Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    const Text("Don't have an account? "),
+    GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SellerRegisterScreen(),
+          ),
+        );
+      },
+      child: const Text(
+        "Register",
+        style: TextStyle(
+          color: Colors.blue,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    ),
+  ],
+),
                       ],
                     ),
                   )
@@ -196,3 +220,11 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+
+
+
+
+
+
+
+
